@@ -3,3 +3,7 @@
 
 # text files
 *.txt
+# executable files
+*.bin
+# images files
+*.img

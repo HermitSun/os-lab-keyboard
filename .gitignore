@@ -1,2 +1,5 @@
+# IDE config
 .vscode/
+
+# text files
 *.txt

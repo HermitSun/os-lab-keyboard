@@ -24,6 +24,14 @@ PRIVATE void tty_do_read(TTY *p_tty);
 PRIVATE void tty_do_write(TTY *p_tty);
 PRIVATE void put_key(TTY *p_tty, u32 key);
 
+// 输入模式
+// int MODE_INPUT = 0;
+// 搜索模式
+// int MODE_SEARCH = 1;
+
+// 当前状态
+int current_mode;
+
 /*======================================================================*
                            task_tty
  *======================================================================*/
@@ -38,12 +46,36 @@ PUBLIC void task_tty()
 		init_tty(p_tty);
 	}
 	select_console(0);
+
+	// 初始为输入模式
+	current_mode = 0;
+	// 开始计时
+	// -20*10000是为了先清屏一次
+	int time_counter = get_ticks() - 20 * 10000;
+
 	while (1)
 	{
 		for (p_tty = TTY_FIRST; p_tty < TTY_END; p_tty++)
 		{
 			tty_do_read(p_tty);
 			tty_do_write(p_tty);
+
+			// 处在输入模式并且超过20s则清屏（输出\b来清屏……）
+			// 不知道原作者怎么计算这个ms的，1s难道不是1000ms？
+			// @See [[kernal/clock.c]]
+			int current_time = get_ticks();
+			if (current_mode == 0 &&
+				((current_time - time_counter) * 1000 / HZ) > 20 * 10000)
+			{
+				int i = 0;
+				for (i = 0; i < 80 * 25 * 2; ++i)
+				{
+					out_char(p_tty->p_console, '\b');
+				}
+				// 重置计时器
+				// 但是可以预见，这种方式的误差会越来越大，因为调用需要时间
+				time_counter = current_time;
+			}
 		}
 	}
 }
@@ -80,6 +112,10 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 			break;
 		case BACKSPACE:
 			put_key(p_tty, '\b');
+			break;
+		// 处理TAB
+		case TAB:
+			put_key(p_tty, '\t');
 			break;
 		case UP:
 			if ((key & FLAG_SHIFT_L) || (key & FLAG_SHIFT_R))

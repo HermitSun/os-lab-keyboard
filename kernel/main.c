@@ -109,10 +109,7 @@ void TestA()
 	int i = 0;
 	while (1)
 	{
-		// 20s执行一次清屏
-		// 不知道原作者是怎么计算ms的
-		milli_delay(20 * 10000);
-		printf("<Ticks:%x>", get_ticks());
+		milli_delay(200);
 	}
 }
 

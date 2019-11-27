@@ -145,8 +145,16 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 		if ((key & MASK_RAW) == 'z' &&
 			((key & FLAG_CTRL_L) || (key & FLAG_CTRL_R)))
 		{
-			// 撤销相当于广义的退格
-			do_backspace(p_tty);
+			// 搜索完成时屏蔽输入
+			if (search_has_done == 1)
+			{
+				;
+			}
+			else
+			{
+				// 撤销相当于广义的退格
+				do_backspace(p_tty);
+			}
 		}
 		else
 		{
@@ -174,11 +182,19 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 			// 搜索模式的输入是另外一种输入（会被自动清空的输入）
 			else
 			{
-				put_key(p_tty, key);
-				// 可输出字符加入搜索缓存
-				// 假设不会溢出
-				search_buf[p_search_buf] = key;
-				++p_search_buf;
+				// 搜索完成时屏蔽输入
+				if (search_has_done == 1)
+				{
+					;
+				}
+				else
+				{
+					put_key(p_tty, key);
+					// 可输出字符加入搜索缓存
+					// 假设不会溢出
+					search_buf[p_search_buf] = key;
+					++p_search_buf;
+				}
 			}
 		}
 	}
@@ -202,75 +218,99 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 			// 所以这也默认了搜索模式不会出现换行（
 			else
 			{
-				int input_length = strlen(buf);
-				int search_length = strlen(search_buf);
-				// 初始化找到的index
-				int i;
-				for (i = 0; i < 80 * 25; ++i)
+				// 搜索完成时屏蔽输入
+				if (search_has_done == 1)
 				{
-					indexs[i] = 0;
+					;
 				}
-				// 进行搜索
-				for (i = 0; i < input_length - search_length + 1; ++i)
+				else
 				{
-					int is_equal = 1;
-					int j;
-					for (j = 0; j < search_length; ++j)
+					int input_length = strlen(buf);
+					int search_length = strlen(search_buf);
+					// 初始化找到的index
+					int i;
+					for (i = 0; i < 80 * 25; ++i)
 					{
-						if (buf[i + j] != search_buf[j])
-						{
-							is_equal = 0;
-							break;
-						}
+						indexs[i] = 0;
 					}
-					if (is_equal)
+					// 进行搜索
+					for (i = 0; i < input_length - search_length + 1; ++i)
 					{
-						// 考虑搜索到的内容重合，使用这种方式可以重复标记
+						int is_equal = 1;
+						int j;
 						for (j = 0; j < search_length; ++j)
 						{
-							indexs[i + j] = 1;
+							if (buf[i + j] != search_buf[j])
+							{
+								is_equal = 0;
+								break;
+							}
+						}
+						if (is_equal)
+						{
+							// 考虑搜索到的内容重合，使用这种方式可以重复标记
+							for (j = 0; j < search_length; ++j)
+							{
+								indexs[i + j] = 1;
+							}
 						}
 					}
+					// 搜索完成，交给输出函数进行处理
+					search_has_done = 1;
+					clear_screen(p_tty);
+					put_key(p_tty, '\n');
 				}
-				// 搜索完成，交给输出函数进行处理
-				search_has_done = 1;
-				clear_screen(p_tty);
-				put_key(p_tty, '\n');
 			}
 			break;
 		// 两种模式都支持退格
 		case BACKSPACE:
-			put_key(p_tty, '\b');
-			// 退格对当前行和缓存的处理移到后面
+			// 搜索完成时屏蔽输入
+			if (search_has_done == 1)
+			{
+				;
+			}
+			else
+			{
+				put_key(p_tty, '\b');
+				// 退格对当前行和缓存的处理移到后面
+			}
 			break;
 		// 处理TAB
 		case TAB:
-			put_key(p_tty, '\t');
-			// 输入模式的TAB
-			if (current_mode == 0)
+			// 搜索完成时屏蔽输入
+			if (search_has_done == 1)
 			{
-				// TAB换行
-				if (line_length[current_line] + 4 > 80)
-				{
-					int temp = line_length[current_line];
-					line_length[current_line] = 80;
-					++current_line;
-					line_length[current_line] = temp + 4 - 80;
-				}
-				else
-				{
-					line_length[current_line] += 4;
-				}
-				// 特殊字符\t加入缓存
-				buf[p_buf] = '\t';
-				++p_buf;
+				;
 			}
-			// 搜索模式的TAB
 			else
 			{
-				// 加入搜索缓存
-				search_buf[p_search_buf] = '\t';
-				++p_search_buf;
+				put_key(p_tty, '\t');
+				// 输入模式的TAB
+				if (current_mode == 0)
+				{
+					// TAB换行
+					if (line_length[current_line] + 4 > 80)
+					{
+						int temp = line_length[current_line];
+						line_length[current_line] = 80;
+						++current_line;
+						line_length[current_line] = temp + 4 - 80;
+					}
+					else
+					{
+						line_length[current_line] += 4;
+					}
+					// 特殊字符\t加入缓存
+					buf[p_buf] = '\t';
+					++p_buf;
+				}
+				// 搜索模式的TAB
+				else
+				{
+					// 加入搜索缓存
+					search_buf[p_search_buf] = '\t';
+					++p_search_buf;
+				}
 			}
 			break;
 		// 处理ESC
@@ -445,8 +485,8 @@ PRIVATE void tty_do_write(TTY *p_tty)
 					out_char(p_tty->p_console, search_buf[i], 1);
 				}
 			}
-			// 关闭搜索模式
-			search_has_done = 0;
+			// // 关闭搜索模式
+			// search_has_done = 0;
 		}
 		// 搜索模式向非搜索模式切换
 		else if (ch == 0x1B)

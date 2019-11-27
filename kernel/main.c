@@ -109,9 +109,10 @@ void TestA()
 	int i = 0;
 	while (1)
 	{
-		printf("<Ticks:%x>", get_ticks());
-		// 20s输出一次
+		// 20s执行一次清屏
+		// 不知道原作者是怎么计算ms的
 		milli_delay(20 * 10000);
+		printf("<Ticks:%x>", get_ticks());
 	}
 }
 
@@ -139,4 +140,14 @@ void TestC()
 		// printf("C");
 		milli_delay(200);
 	}
+}
+
+PRIVATE void set_cursor(unsigned int position)
+{
+	disable_int();
+	out_byte(CRTC_ADDR_REG, CURSOR_H);
+	out_byte(CRTC_DATA_REG, (position >> 8) & 0xFF);
+	out_byte(CRTC_ADDR_REG, CURSOR_L);
+	out_byte(CRTC_DATA_REG, position & 0xFF);
+	enable_int();
 }

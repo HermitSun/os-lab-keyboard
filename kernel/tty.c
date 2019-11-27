@@ -33,7 +33,10 @@ PRIVATE void put_key(TTY *p_tty, u32 key);
 int current_mode;
 // 缓存输入的字符，用于搜索
 char buf[80 * 25];
-char *p_buf = buf;
+int p_buf;
+// 每一行长度
+int line_length[25 * 2];
+int current_line;
 
 /*======================================================================*
                            task_tty
@@ -54,7 +57,20 @@ PUBLIC void task_tty()
 	current_mode = 0;
 	// 开始计时
 	// -20 * 1000是为了先清屏一次
-	int time_counter = get_ticks() - 20 * 1000;
+	int time_counter = get_ticks() - 80 * 1000;
+	// 初始化缓存区指针
+	p_buf = 0;
+	int i;
+	for (i = 0; i < 80 * 25; ++i)
+	{
+		buf[i] = 0;
+	}
+	// 初始化每一行的长度
+	for (i = 0; i < 25 * 2; ++i)
+	{
+		line_length[i] = 0;
+	}
+	current_line = 0;
 
 	while (1)
 	{
@@ -64,18 +80,27 @@ PUBLIC void task_tty()
 			tty_do_write(p_tty);
 
 			// 处在输入模式并且超过20s则清屏（输出\b来清屏……）
+			// 时间似乎是错乱的
 			// @See [[kernal/clock.c]]
 			int current_time = get_ticks();
 			if (current_mode == 0 &&
-				((current_time - time_counter) * 1000 / HZ) > 20 * 1000)
+				((current_time - time_counter) * 1000 / HZ) > 80 * 1000)
 			{
-				int i = 0;
+				int i;
 				for (i = 0; i < 80 * 25 * 2; ++i)
 				{
 					out_char(p_tty->p_console, '\b');
 				}
-				// 重置缓存
-				p_buf = buf;
+				// 重置缓存和每一行长度，否则会导致退格异常
+				p_buf = 0;
+				for (i = 0; i < 80 * 25; ++i)
+				{
+					buf[i] = 0;
+				}
+				for (i = 0; i < 25 * 2; ++i)
+				{
+					line_length[i] = 0;
+				}
 				// 重置计时器
 				// 但是可以预见，这种方式的误差会越来越大，因为调用需要时间
 				time_counter = current_time;
@@ -104,11 +129,31 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 
 	if (!(key & FLAG_EXT))
 	{
-		put_key(p_tty, key);
-		// 可输出字符加入缓存
-		// 假设不会溢出
-		*p_buf = key;
-		++p_buf;
+		// TODO:撤销
+		if (key == 0x7A && ((key & FLAG_CTRL_L) || (key & FLAG_CTRL_R)))
+		{
+			disp_str("Z");
+		}
+		else
+		{
+			put_key(p_tty, key);
+			// 可输出字符加入缓存
+			// 假设不会溢出
+			buf[p_buf] = key;
+			++p_buf;
+			// 普通字符长度 + 1
+			if (line_length[current_line] + 1 > 80)
+			{
+				int temp = line_length[current_line];
+				line_length[current_line] = 80;
+				++current_line;
+				line_length[current_line] = temp + 1 - 80;
+			}
+			else
+			{
+				++line_length[current_line];
+			}
+		}
 	}
 	else
 	{
@@ -117,25 +162,39 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 		{
 		case ENTER:
 			put_key(p_tty, '\n');
+			// 下一行
+			++current_line;
 			// 特殊字符\n加入缓存
-			*p_buf = key;
+			buf[p_buf] = '\n';
 			++p_buf;
 			break;
 		case BACKSPACE:
 			put_key(p_tty, '\b');
-			// 退格对缓存的处理移到后面
+			// 退格对当前行和缓存的处理移到后面
 			break;
 		// 处理TAB
 		case TAB:
 			put_key(p_tty, '\t');
+			// TAB换行
+			if (line_length[current_line] + 4 > 80)
+			{
+				int temp = line_length[current_line];
+				line_length[current_line] = 80;
+				++current_line;
+				line_length[current_line] = temp + 4 - 80;
+			}
+			else
+			{
+				line_length[current_line] += 4;
+			}
 			// 特殊字符\t加入缓存
-			*p_buf = key;
+			buf[p_buf] = '\t';
 			++p_buf;
 			break;
 		// 处理ESC
-		// 如果现在是输入模式，进入搜索模式
-		// 如果现在是搜索模式，返回输入模式
 		case ESC:
+			// 如果现在是输入模式，进入搜索模式
+			// 如果现在是搜索模式，返回输入模式
 			current_mode = current_mode == 0 ? 1 : 0;
 			break;
 		case UP:
@@ -228,27 +287,85 @@ PRIVATE void tty_do_write(TTY *p_tty)
 		}
 		else if (ch == '\b')
 		{
+			// 回到缓存真正的头部，同时要避免越界
+			// 无论如何，当前字符都要退出缓存
+			if (p_buf > 0)
+			{
+				--p_buf;
+			}
 			// TAB需要退4格
-			if (*p_buf == '\t')
+			// 不知道为啥TAB变成0x9了
+			if (buf[p_buf] == 0x9)
 			{
 				int i;
 				for (i = 0; i < 4; ++i)
 				{
 					out_char(p_tty->p_console, '\b');
 				}
+
+				// TAB换行
+				if (line_length[current_line] - 4 < 0)
+				{
+					int temp = line_length[current_line];
+					line_length[current_line] = 0;
+					// 防止越界
+					if (current_line - 1 >= 0)
+					{
+						--current_line;
+						if (line_length[current_line] - (4 - temp) >= 0)
+						{
+							line_length[current_line] = line_length[current_line] - (4 - temp);
+						}
+					}
+				}
+				else
+				{
+					line_length[current_line] -= 4;
+				}
 			}
 			// ENTER需要退一行
-			if (*p_buf == '\n')
+			// 不知道为啥ENTER变成0xA了
+			else if (buf[p_buf] == 0xA)
 			{
 				int i;
-				for (i = 0; i < SCREEN_WIDTH; ++i)
+				line_length[current_line] = 0;
+				// 防止越界
+				if (current_line - 1 >= 0)
+				{
+					--current_line;
+				}
+				for (i = 0; i < 80 - line_length[current_line]; ++i)
 				{
 					out_char(p_tty->p_console, '\b');
 				}
 			}
-			// 无论如何，当前字符都要退出缓存
-			--p_buf;
+			// 其他情况退一格
+			else
+			{
+				out_char(p_tty->p_console, '\b');
+				// 普通字符 - 1
+				if (line_length[current_line] - 1 < 0)
+				{
+					line_length[current_line] = 0;
+					// 防止越界
+					if (current_line - 1 >= 0)
+					{
+						--current_line;
+						if (line_length[current_line] - 1 >= 0)
+						{
+							--line_length[current_line];
+						}
+					}
+				}
+				else
+				{
+					--line_length[current_line];
+				}
+			}
+			// 清除当前字符的缓存
+			buf[p_buf] = 0;
 		}
+		// 其他字符直接输出
 		else
 		{
 			out_char(p_tty->p_console, ch);

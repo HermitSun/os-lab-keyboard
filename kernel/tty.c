@@ -31,6 +31,9 @@ PRIVATE void put_key(TTY *p_tty, u32 key);
 
 // 当前状态
 int current_mode;
+// buffer
+char buf[80 * 25];
+char* p_buf = buf;
 
 /*======================================================================*
                            task_tty
@@ -50,8 +53,8 @@ PUBLIC void task_tty()
 	// 初始为输入模式
 	current_mode = 0;
 	// 开始计时
-	// -20*10000是为了先清屏一次
-	int time_counter = get_ticks() - 20 * 10000;
+	// -20 * 1000是为了先清屏一次
+	int time_counter = get_ticks() - 20 * 1000;
 
 	while (1)
 	{
@@ -61,11 +64,10 @@ PUBLIC void task_tty()
 			tty_do_write(p_tty);
 
 			// 处在输入模式并且超过20s则清屏（输出\b来清屏……）
-			// 不知道原作者怎么计算这个ms的，1s难道不是1000ms？
 			// @See [[kernal/clock.c]]
 			int current_time = get_ticks();
 			if (current_mode == 0 &&
-				((current_time - time_counter) * 1000 / HZ) > 20 * 10000)
+			        ((current_time - time_counter) * 1000 / HZ) > 20 * 1000)
 			{
 				int i = 0;
 				for (i = 0; i < 80 * 25 * 2; ++i)
@@ -101,6 +103,7 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 	if (!(key & FLAG_EXT))
 	{
 		put_key(p_tty, key);
+		buf[p_buf] = key;
 	}
 	else
 	{
@@ -116,6 +119,10 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 		// 处理TAB
 		case TAB:
 			put_key(p_tty, '\t');
+			break;
+		// deal with ESC
+		case ESC:
+			current_mode = current_mode == 0 ? 1 : 0;
 			break;
 		case UP:
 			if ((key & FLAG_SHIFT_L) || (key & FLAG_SHIFT_R))

@@ -24,6 +24,9 @@ PRIVATE void tty_do_read(TTY *p_tty);
 PRIVATE void tty_do_write(TTY *p_tty);
 PRIVATE void put_key(TTY *p_tty, u32 key);
 
+// 退格方法
+PRIVATE void do_backspace(TTY *p_tty);
+
 // 输入模式
 // int MODE_INPUT = 0;
 // 搜索模式
@@ -129,10 +132,12 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 
 	if (!(key & FLAG_EXT))
 	{
-		// TODO:撤销
-		if (key == 0x7A && ((key & FLAG_CTRL_L) || (key & FLAG_CTRL_R)))
+		// 撤销
+		if ((key & MASK_RAW) == 'z' &&
+			((key & FLAG_CTRL_L) || (key & FLAG_CTRL_R)))
 		{
-			disp_str("Z");
+			// 相当于广义的退格
+			do_backspace(p_tty);
 		}
 		else
 		{
@@ -287,83 +292,7 @@ PRIVATE void tty_do_write(TTY *p_tty)
 		}
 		else if (ch == '\b')
 		{
-			// 回到缓存真正的头部，同时要避免越界
-			// 无论如何，当前字符都要退出缓存
-			if (p_buf > 0)
-			{
-				--p_buf;
-			}
-			// TAB需要退4格
-			// 不知道为啥TAB变成0x9了
-			if (buf[p_buf] == 0x9)
-			{
-				int i;
-				for (i = 0; i < 4; ++i)
-				{
-					out_char(p_tty->p_console, '\b');
-				}
-
-				// TAB换行
-				if (line_length[current_line] - 4 < 0)
-				{
-					int temp = line_length[current_line];
-					line_length[current_line] = 0;
-					// 防止越界
-					if (current_line - 1 >= 0)
-					{
-						--current_line;
-						if (line_length[current_line] - (4 - temp) >= 0)
-						{
-							line_length[current_line] = line_length[current_line] - (4 - temp);
-						}
-					}
-				}
-				else
-				{
-					line_length[current_line] -= 4;
-				}
-			}
-			// ENTER需要退一行
-			// 不知道为啥ENTER变成0xA了
-			else if (buf[p_buf] == 0xA)
-			{
-				int i;
-				line_length[current_line] = 0;
-				// 防止越界
-				if (current_line - 1 >= 0)
-				{
-					--current_line;
-				}
-				for (i = 0; i < 80 - line_length[current_line]; ++i)
-				{
-					out_char(p_tty->p_console, '\b');
-				}
-			}
-			// 其他情况退一格
-			else
-			{
-				out_char(p_tty->p_console, '\b');
-				// 普通字符 - 1
-				if (line_length[current_line] - 1 < 0)
-				{
-					line_length[current_line] = 0;
-					// 防止越界
-					if (current_line - 1 >= 0)
-					{
-						--current_line;
-						if (line_length[current_line] - 1 >= 0)
-						{
-							--line_length[current_line];
-						}
-					}
-				}
-				else
-				{
-					--line_length[current_line];
-				}
-			}
-			// 清除当前字符的缓存
-			buf[p_buf] = 0;
+			do_backspace(p_tty);
 		}
 		// 其他字符直接输出
 		else
@@ -395,4 +324,86 @@ PUBLIC int sys_write(char *buf, int len, PROCESS *p_proc)
 {
 	tty_write(&tty_table[p_proc->nr_tty], buf, len);
 	return 0;
+}
+
+// 处理退格
+PRIVATE void do_backspace(TTY *p_tty)
+{
+	// 回到缓存真正的头部，同时要避免越界
+	// 无论如何，当前字符都要退出缓存
+	if (p_buf > 0)
+	{
+		--p_buf;
+	}
+	// TAB需要退4格
+	// 不知道为啥TAB变成0x9了
+	if (buf[p_buf] == 0x9)
+	{
+		int i;
+		for (i = 0; i < 4; ++i)
+		{
+			out_char(p_tty->p_console, '\b');
+		}
+
+		// TAB换行
+		if (line_length[current_line] - 4 < 0)
+		{
+			int temp = line_length[current_line];
+			line_length[current_line] = 0;
+			// 防止越界
+			if (current_line - 1 >= 0)
+			{
+				--current_line;
+				if (line_length[current_line] - (4 - temp) >= 0)
+				{
+					line_length[current_line] = line_length[current_line] - (4 - temp);
+				}
+			}
+		}
+		else
+		{
+			line_length[current_line] -= 4;
+		}
+	}
+	// ENTER需要退一行
+	// 不知道为啥ENTER变成0xA了
+	else if (buf[p_buf] == 0xA)
+	{
+		int i;
+		line_length[current_line] = 0;
+		// 防止越界
+		if (current_line - 1 >= 0)
+		{
+			--current_line;
+		}
+		for (i = 0; i < 80 - line_length[current_line]; ++i)
+		{
+			out_char(p_tty->p_console, '\b');
+		}
+	}
+	// 其他情况退一格
+	else
+	{
+		out_char(p_tty->p_console, '\b');
+		// 普通字符 - 1
+		if (line_length[current_line] - 1 < 0)
+		{
+			line_length[current_line] = 0;
+			// 防止越界
+			if (current_line - 1 >= 0)
+			{
+				--current_line;
+				if (line_length[current_line] - 1 >= 0)
+				{
+					--line_length[current_line];
+				}
+			}
+		}
+		else
+		{
+			--line_length[current_line];
+		}
+	}
+	// 清除当前字符的缓存
+	buf[p_buf] = 0;
 }

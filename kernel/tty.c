@@ -36,6 +36,8 @@ PRIVATE void do_backspace(TTY *p_tty);
 
 // 当前状态
 int current_mode;
+// 之前状态
+int before_mode;
 // 缓存输入的字符，用于搜索
 char buf[80 * 25];
 int p_buf;
@@ -48,6 +50,8 @@ int p_search_buf;
 // 搜索是否已完成
 int indexs[80 * 25];
 int search_has_done;
+// 计时器
+int time_counter;
 
 /*======================================================================*
                            task_tty
@@ -66,9 +70,10 @@ PUBLIC void task_tty()
 
 	// 初始为输入模式
 	current_mode = 0;
+	before_mode = 0;
 	// 开始计时
-	// -20 * 1000是为了先清屏一次
-	int time_counter = get_ticks() - 80 * 1000;
+	// -60 * 1000是为了先清屏一次
+	time_counter = get_ticks() - 60 * 1000;
 	// 初始化缓存区指针
 	p_buf = 0;
 	int i;
@@ -95,7 +100,7 @@ PUBLIC void task_tty()
 			// @See [[kernal/clock.c]]
 			int current_time = get_ticks();
 			if (current_mode == 0 &&
-				((current_time - time_counter) * 1000 / HZ) > 80 * 1000)
+				((current_time - time_counter) * 1000 / HZ) > 60 * 1000)
 			{
 				clear_screen(p_tty);
 				// 重置缓存和每一行长度，否则会导致退格异常
@@ -270,6 +275,8 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 			break;
 		// 处理ESC
 		case ESC:
+			// 更新之前的模式
+			before_mode = current_mode;
 			// 如果现在是输入模式，进入搜索模式
 			// 如果现在是搜索模式，返回输入模式
 			current_mode = current_mode == 0 ? 1 : 0;
@@ -284,8 +291,10 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 			// 重置搜索状态
 			search_has_done = 0;
 			// 切换后回到输入模式，先清空屏幕
-			if (current_mode == 0)
+			if (current_mode == 0 &&
+				before_mode == 1)
 			{
+				time_counter = get_ticks();
 				clear_screen(p_tty);
 				put_key(p_tty, 0x1B);
 			}

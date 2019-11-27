@@ -31,9 +31,9 @@ PRIVATE void put_key(TTY *p_tty, u32 key);
 
 // 当前状态
 int current_mode;
-// buffer
+// 缓存输入的字符，用于搜索
 char buf[80 * 25];
-char* p_buf = buf;
+char *p_buf = buf;
 
 /*======================================================================*
                            task_tty
@@ -67,13 +67,15 @@ PUBLIC void task_tty()
 			// @See [[kernal/clock.c]]
 			int current_time = get_ticks();
 			if (current_mode == 0 &&
-			        ((current_time - time_counter) * 1000 / HZ) > 20 * 1000)
+				((current_time - time_counter) * 1000 / HZ) > 20 * 1000)
 			{
 				int i = 0;
 				for (i = 0; i < 80 * 25 * 2; ++i)
 				{
 					out_char(p_tty->p_console, '\b');
 				}
+				// 重置缓存
+				p_buf = buf;
 				// 重置计时器
 				// 但是可以预见，这种方式的误差会越来越大，因为调用需要时间
 				time_counter = current_time;
@@ -103,7 +105,10 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 	if (!(key & FLAG_EXT))
 	{
 		put_key(p_tty, key);
-		buf[p_buf] = key;
+		// 可输出字符加入缓存
+		// 假设不会溢出
+		*p_buf = key;
+		++p_buf;
 	}
 	else
 	{
@@ -112,15 +117,24 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 		{
 		case ENTER:
 			put_key(p_tty, '\n');
+			// 特殊字符\n加入缓存
+			*p_buf = key;
+			++p_buf;
 			break;
 		case BACKSPACE:
 			put_key(p_tty, '\b');
+			// 退格对缓存的处理移到后面
 			break;
 		// 处理TAB
 		case TAB:
 			put_key(p_tty, '\t');
+			// 特殊字符\t加入缓存
+			*p_buf = key;
+			++p_buf;
 			break;
-		// deal with ESC
+		// 处理ESC
+		// 如果现在是输入模式，进入搜索模式
+		// 如果现在是搜索模式，返回输入模式
 		case ESC:
 			current_mode = current_mode == 0 ? 1 : 0;
 			break;
@@ -203,7 +217,42 @@ PRIVATE void tty_do_write(TTY *p_tty)
 		}
 		p_tty->inbuf_count--;
 
-		out_char(p_tty->p_console, ch);
+		// TAB需要输出4个空格
+		if (ch == '\t')
+		{
+			int i;
+			for (i = 0; i < 4; ++i)
+			{
+				out_char(p_tty->p_console, ' ');
+			}
+		}
+		else if (ch == '\b')
+		{
+			// TAB需要退4格
+			if (*p_buf == '\t')
+			{
+				int i;
+				for (i = 0; i < 4; ++i)
+				{
+					out_char(p_tty->p_console, '\b');
+				}
+			}
+			// ENTER需要退一行
+			if (*p_buf == '\n')
+			{
+				int i;
+				for (i = 0; i < SCREEN_WIDTH; ++i)
+				{
+					out_char(p_tty->p_console, '\b');
+				}
+			}
+			// 无论如何，当前字符都要退出缓存
+			--p_buf;
+		}
+		else
+		{
+			out_char(p_tty->p_console, ch);
+		}
 	}
 }
 

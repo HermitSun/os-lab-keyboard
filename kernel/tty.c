@@ -152,8 +152,17 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 			}
 			else
 			{
-				// 撤销相当于广义的退格
-				do_backspace(p_tty);
+				// 撤销退格
+				if (buf[p_buf + 1] == '\b')
+				{
+					put_key(p_tty, buf[p_buf]);
+					++p_buf;
+				}
+				// 其他情况下撤销相当于退格
+				else
+				{
+					do_backspace(p_tty);
+				}
 			}
 		}
 		else
@@ -271,6 +280,10 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 			}
 			else
 			{
+				// 特殊字符\b加入缓存，为了支持撤销
+				// 不移动指针
+				buf[p_buf] = '\b';
+				// ++p_buf;
 				put_key(p_tty, '\b');
 				// 退格对当前行和缓存的处理移到后面
 			}
@@ -649,8 +662,8 @@ PRIVATE void do_backspace(TTY *p_tty)
 				--line_length[current_line];
 			}
 		}
-		// 清除当前字符的缓存
-		buf[p_buf] = 0;
+		// 为了撤销，不能清除，直接移动指针即可
+		// buf[p_buf] = 0;
 	}
 	// 搜索模式的退格
 	else
@@ -681,8 +694,8 @@ PRIVATE void do_backspace(TTY *p_tty)
 		{
 			out_char(p_tty->p_console, '\b', 0);
 		}
-		// 清除当前字符的缓存
-		search_buf[p_search_buf] = 0;
+		// 为了撤销，不能清除，直接移动指针即可
+		// search_buf[p_search_buf] = 0;
 	}
 }
 

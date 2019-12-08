@@ -234,7 +234,8 @@ PUBLIC void in_process(TTY *p_tty, u32 key)
 				}
 				else
 				{
-					int input_length = strlen(buf);
+					// 只搜索现在有效的字符，而不是搜索整个缓冲区
+					int input_length = p_buf;
 					int search_length = strlen(search_buf);
 					// 初始化找到的index
 					int i;
@@ -434,7 +435,8 @@ PRIVATE void tty_do_write(TTY *p_tty)
 		// 搜索模式
 		if (search_has_done == 1)
 		{
-			int input_length = strlen(buf);
+			// 只搜索现在有效的字符，而不是搜索整个缓冲区
+			int input_length = p_buf;
 			int search_length = strlen(search_buf);
 			int i;
 			for (i = 0; i < input_length; ++i)
